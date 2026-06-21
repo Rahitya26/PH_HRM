@@ -17,9 +17,9 @@ export default function Shifts() {
 
   const fetchData = async () => {
     try {
-      const shiftRes = await axios.get(`http://localhost:5000/api/shifts?branch_id=${selectedBranch}`);
+      const shiftRes = await axios.get(`/api/shifts?branch_id=${selectedBranch}`);
       setShifts(shiftRes.data);
-      const deptRes = await axios.get(`http://localhost:5000/api/departments?branch_id=${selectedBranch}`);
+      const deptRes = await axios.get(`/api/departments?branch_id=${selectedBranch}`);
       setDepartments(deptRes.data);
     } catch (err) {
       console.error(err);
@@ -53,9 +53,9 @@ export default function Shifts() {
     e.preventDefault();
     try {
       if (editingShiftId) {
-        await axios.put(`http://localhost:5000/api/shifts/${editingShiftId}`, newShift);
+        await axios.put(`/api/shifts/${editingShiftId}`, newShift);
       } else {
-        await axios.post('http://localhost:5000/api/shifts', { ...newShift, branch_id: selectedBranch });
+        await axios.post('/api/shifts', { ...newShift, branch_id: selectedBranch });
       }
       setNewShift(initialShiftState);
       setEditingShiftId(null);
@@ -68,7 +68,7 @@ export default function Shifts() {
   const handleDeleteShift = async (id) => {
     if(!window.confirm('Delete this shift?')) return;
     try {
-      await axios.delete(`http://localhost:5000/api/shifts/${id}`);
+      await axios.delete(`/api/shifts/${id}`);
       fetchData();
     } catch (err) {
       alert('Failed to delete shift');
@@ -78,7 +78,7 @@ export default function Shifts() {
   const handleAddDept = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('http://localhost:5000/api/departments', { name: newDept, branch_id: selectedBranch });
+      await axios.post('/api/departments', { name: newDept, branch_id: selectedBranch });
       setNewDept('');
       fetchData();
     } catch (err) {
@@ -89,7 +89,7 @@ export default function Shifts() {
   const handleDeleteDept = async (id) => {
     if(!window.confirm('Delete this department?')) return;
     try {
-      await axios.delete(`http://localhost:5000/api/departments/${id}`);
+      await axios.delete(`/api/departments/${id}`);
       fetchData();
     } catch (err) {
       alert('Failed to delete department');

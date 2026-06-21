@@ -24,8 +24,8 @@ export default function ManagerAttendance() {
   useEffect(() => {
     if (user?.branch_id) {
       Promise.all([
-        axios.get(`http://localhost:5000/api/employees?branch_id=${user.branch_id}`),
-        axios.get(`http://localhost:5000/api/departments?branch_id=${user.branch_id}`)
+        axios.get(`/api/employees?branch_id=${user.branch_id}`),
+        axios.get(`/api/departments?branch_id=${user.branch_id}`)
       ]).then(([empRes, deptRes]) => {
         setEmployees(empRes.data);
         setDepartments(deptRes.data);
@@ -36,7 +36,7 @@ export default function ManagerAttendance() {
   useEffect(() => {
     if (user?.branch_id && date) {
       setIsLoading(true);
-      axios.get(`http://localhost:5000/api/attendance?branch_id=${user.branch_id}&date=${date}`)
+      axios.get(`/api/attendance?branch_id=${user.branch_id}&date=${date}`)
         .then(res => {
           const fetchedRecords = {};
           res.data.forEach(r => {
@@ -63,7 +63,7 @@ export default function ManagerAttendance() {
         .catch(err => console.error(err))
         .finally(() => setIsLoading(false));
 
-      axios.get(`http://localhost:5000/api/loans/state?branch_id=${user.branch_id}&month=${date.slice(0, 7)}`)
+      axios.get(`/api/loans/state?branch_id=${user.branch_id}&month=${date.slice(0, 7)}`)
         .then(res => setLoanState(res.data))
         .catch(err => console.error(err));
     }
@@ -109,7 +109,7 @@ export default function ManagerAttendance() {
           other_allowance: parseInt(records[empId].other_allowance) || 0
         }))
       };
-      await axios.post('http://localhost:5000/api/attendance', payload);
+      await axios.post('/api/attendance', payload);
       setInitialRecords(JSON.parse(JSON.stringify(records)));
       setHasChanges(false);
       setIsLocked(true);
@@ -139,14 +139,14 @@ export default function ManagerAttendance() {
       return alert("Loan deduction amount is required!");
     }
     try {
-      await axios.post('http://localhost:5000/api/loans', {
+      await axios.post('/api/loans', {
         employee_id: loanModal.emp.id,
         amount: parseInt(loanModal.amount) || 0,
         deduction_amount: parseInt(loanModal.deduction) || 0,
         start_month: loanModal.startMonth
       });
       setLoanModal({ open: false, emp: null, amount: '', deduction: '', startMonth: '' });
-      axios.get(`http://localhost:5000/api/loans/state?branch_id=${user.branch_id}&month=${date.slice(0, 7)}`)
+      axios.get(`/api/loans/state?branch_id=${user.branch_id}&month=${date.slice(0, 7)}`)
         .then(res => setLoanState(res.data));
       alert(`Loan successfully created for ${loanModal.emp.name}!`);
     } catch (err) {

@@ -16,7 +16,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   const login = async (username, password) => {
-    const res = await axios.post('http://localhost:5000/api/login', { username, password });
+    const res = await axios.post('/api/login', { username, password });
     setUser(res.data);
     localStorage.setItem('hrm_user', JSON.stringify(res.data));
     return res.data;

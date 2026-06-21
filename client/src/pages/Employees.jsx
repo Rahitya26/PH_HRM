@@ -17,14 +17,14 @@ export default function Employees() {
 
   const fetchData = async () => {
     try {
-      const empRes = await axios.get(`http://localhost:5000/api/employees?branch_id=${selectedBranch}`);
+      const empRes = await axios.get(`/api/employees?branch_id=${selectedBranch}`);
       setEmployees(empRes.data);
-      const deptRes = await axios.get(`http://localhost:5000/api/departments?branch_id=${selectedBranch}`);
+      const deptRes = await axios.get(`/api/departments?branch_id=${selectedBranch}`);
       setDepartments(deptRes.data);
-      const shiftRes = await axios.get(`http://localhost:5000/api/shifts?branch_id=${selectedBranch}`);
+      const shiftRes = await axios.get(`/api/shifts?branch_id=${selectedBranch}`);
       setShifts(shiftRes.data);
       const currentMonth = new Date().toISOString().slice(0, 7);
-      const loanRes = await axios.get(`http://localhost:5000/api/loans/state?branch_id=${selectedBranch}&month=${currentMonth}`);
+      const loanRes = await axios.get(`/api/loans/state?branch_id=${selectedBranch}&month=${currentMonth}`);
       setLoanState(loanRes.data);
     } catch (err) {
       console.error(err);
@@ -56,7 +56,7 @@ export default function Employees() {
 
   const handleSave = async () => {
     try {
-      await axios.put(`http://localhost:5000/api/employees/${selectedEmp.id}`, formData);
+      await axios.put(`/api/employees/${selectedEmp.id}`, formData);
       
       // Handle loan changes
       const empLoan = loanState[selectedEmp.id] || { outstanding: 0, currentDeduction: 0 };
@@ -65,7 +65,7 @@ export default function Employees() {
       
       if (newOutstanding !== empLoan.outstanding || newDeduction !== empLoan.currentDeduction) {
          const amountDiff = newOutstanding - empLoan.outstanding;
-         await axios.post('http://localhost:5000/api/loans', {
+         await axios.post('/api/loans', {
            employee_id: selectedEmp.id,
            amount: amountDiff,
            deduction_amount: newDeduction,

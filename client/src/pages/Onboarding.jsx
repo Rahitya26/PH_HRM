@@ -29,13 +29,13 @@ export default function Onboarding() {
 
   useEffect(() => {
     const fetchNextNumber = () => {
-      axios.get('http://localhost:5000/api/employees/next-number').then(res => setNextEmpNumber(res.data.next_number)).catch(() => {});
+      axios.get('/api/employees/next-number').then(res => setNextEmpNumber(res.data.next_number)).catch(() => {});
     };
 
     fetchNextNumber();
     if (selectedBranch) {
-      axios.get(`http://localhost:5000/api/departments?branch_id=${selectedBranch}`).then(res => setDepartments(res.data));
-      axios.get(`http://localhost:5000/api/shifts?branch_id=${selectedBranch}`).then(res => setShifts(res.data));
+      axios.get(`/api/departments?branch_id=${selectedBranch}`).then(res => setDepartments(res.data));
+      axios.get(`/api/shifts?branch_id=${selectedBranch}`).then(res => setShifts(res.data));
     }
   }, [selectedBranch]);
 
@@ -54,7 +54,7 @@ export default function Onboarding() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await axios.post('http://localhost:5000/api/employees', { ...form, branch_id: selectedBranch });
+      await axios.post('/api/employees', { ...form, branch_id: selectedBranch });
       setSuccess(true);
       setForm({
         name: '', email: '', designation: '', package_ctc: '', work_type: 'Full-time', joining_date: '',
@@ -64,7 +64,7 @@ export default function Onboarding() {
         epf_number: '', epf_amount: '', esi_number: '', esi_amount: ''
       });
       setDeptSearch('');
-      axios.get('http://localhost:5000/api/employees/next-number').then(res => setNextEmpNumber(res.data.next_number)).catch(() => {});
+      axios.get('/api/employees/next-number').then(res => setNextEmpNumber(res.data.next_number)).catch(() => {});
     } catch (err) {
       console.error(err);
       alert('Failed to onboard employee');
@@ -180,7 +180,7 @@ export default function Onboarding() {
         };
 
         try {
-          await axios.post('http://localhost:5000/api/employees', payload);
+          await axios.post('/api/employees', payload);
           
           // Only log department/shift mismatches if the employee was successfully inserted
           if(mismatchMsg.length > 0) {

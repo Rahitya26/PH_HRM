@@ -16,10 +16,10 @@ export default function Payroll() {
 
   useEffect(() => {
     if (selectedBranch) {
-      axios.get(`http://localhost:5000/api/employees?branch_id=${selectedBranch}`).then(res => setEmployees(res.data));
-      axios.get(`http://localhost:5000/api/departments?branch_id=${selectedBranch}`).then(res => setDepartments(res.data));
-      axios.get(`http://localhost:5000/api/payroll-data?branch_id=${selectedBranch}&month=${selectedMonth}`).then(res => setPayrollData(res.data));
-      axios.get(`http://localhost:5000/api/loans/state?branch_id=${selectedBranch}&month=${selectedMonth}`).then(res => setLoanState(res.data));
+      axios.get(`/api/employees?branch_id=${selectedBranch}`).then(res => setEmployees(res.data));
+      axios.get(`/api/departments?branch_id=${selectedBranch}`).then(res => setDepartments(res.data));
+      axios.get(`/api/payroll-data?branch_id=${selectedBranch}&month=${selectedMonth}`).then(res => setPayrollData(res.data));
+      axios.get(`/api/loans/state?branch_id=${selectedBranch}&month=${selectedMonth}`).then(res => setLoanState(res.data));
     }
   }, [selectedBranch, selectedMonth]);
 

@@ -10,7 +10,7 @@ export function BranchProvider({ children }) {
 
   const fetchBranches = async () => {
     try {
-      const res = await axios.get('http://localhost:5000/api/branches');
+      const res = await axios.get('/api/branches');
       setBranches(res.data);
       if (res.data.length > 0) {
         const saved = localStorage.getItem('selectedBranch');

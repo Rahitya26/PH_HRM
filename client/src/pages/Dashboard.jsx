@@ -33,7 +33,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (selectedBranch) {
-      axios.get(`http://localhost:5000/api/dashboard/stats?branch_id=${selectedBranch}`)
+      axios.get(`/api/dashboard/stats?branch_id=${selectedBranch}`)
         .then(res => setStats(res.data))
         .catch(err => console.error(err));
     }

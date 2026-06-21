@@ -38,9 +38,9 @@ export default function Branches() {
     try {
       const payload = { name: branchName, username: branchUsername, password: branchPassword };
       if (editingBranch) {
-        await axios.put(`http://localhost:5000/api/branches/${editingBranch.id}`, payload);
+        await axios.put(`/api/branches/${editingBranch.id}`, payload);
       } else {
-        await axios.post('http://localhost:5000/api/branches', payload);
+        await axios.post('/api/branches', payload);
       }
       await fetchBranches();
       setShowModal(false);
