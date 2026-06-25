@@ -10,6 +10,7 @@ export default function Onboarding() {
     name: '', email: '', designation: '', package_ctc: '', work_type: 'Full-time', joining_date: '',
     department_id: '', shift_id: '', phone: '', address: '',
     pan_number: '', aadhar_number: '', bank_name: '', bank_account_number: '', bank_ifsc: '', bank_branch: '',
+    payment_mode: 'Cash',
     has_epf: false, has_esi: false,
     epf_number: '', epf_amount: '', esi_number: '', esi_amount: ''
   });
@@ -60,6 +61,7 @@ export default function Onboarding() {
         name: '', email: '', designation: '', package_ctc: '', work_type: 'Full-time', joining_date: '',
         department_id: '', shift_id: '', phone: '', address: '', pan_number: '', aadhar_number: '',
         bank_name: '', bank_account_number: '', bank_ifsc: '', bank_branch: '', 
+        payment_mode: 'Cash',
         has_epf: false, has_esi: false,
         epf_number: '', epf_amount: '', esi_number: '', esi_amount: ''
       });
@@ -73,11 +75,11 @@ export default function Onboarding() {
 
   const handleDownloadFormat = () => {
     const headers = [
-      "Employee Number", "Full Name", "Email Address", "Designation", "Package", 
+      "Full Name", "Email Address", "Designation", "Package", 
       "Work Type", "Joining Date", "Department Name", "Shift Name", 
-      "Phone Number", "Address", "PAN Number", "Aadhar Number", 
-      "Bank Name", "Account Number", "IFSC", "Branch", 
-      "EPF (Yes/No)", "PT (Yes/No)", "ESI (Yes/No)"
+      "Phone Number", "Address", "PAN Number", "Aadhar Number",
+      "Mode of Payment", "Bank Name", "Account Number", "IFSC", "Branch",
+      "UAN Number", "EPF Amount", "ESI Number", "ESI Amount"
     ];
     const ws = XLSX.utils.aoa_to_sheet([headers]);
     ws['!cols'] = headers.map(h => ({ wch: Math.max(15, h.length + 5) }));
@@ -155,7 +157,6 @@ export default function Onboarding() {
         const payload = {
           name: row["Full Name"] || '',
           email: row["Email Address"] || '',
-          employee_number: row["Employee Number"]?.toString() || '',
           designation: row["Designation"] || '',
           package_ctc: row["Package"] ? row["Package"].toString().replace(/[^0-9]/g, '') : 0,
           work_type: normalizeWorkType(row["Work Type"]),
@@ -170,8 +171,9 @@ export default function Onboarding() {
           bank_account_number: row["Account Number"] || '',
           bank_ifsc: row["IFSC"] || '',
           bank_branch: row["Branch"] || '',
-          has_epf: row["EPF (Yes/No)"]?.toLowerCase() === 'yes',
-          has_esi: row["ESI (Yes/No)"]?.toLowerCase() === 'yes',
+          payment_mode: row["Mode of Payment"] || 'Cash',
+          has_epf: !!(row["UAN Number"] && row["EPF Amount"]),
+          has_esi: !!(row["ESI Number"] && row["ESI Amount"]),
           epf_number: row["UAN Number"] || '',
           epf_amount: row["EPF Amount"] ? parseInt(row["EPF Amount"].toString().replace(/[^0-9]/g, ''), 10) : 0,
           esi_number: row["ESI Number"] || '',
@@ -417,8 +419,14 @@ export default function Onboarding() {
               <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Aadhar Number</label>
               <input type="text" value={form.aadhar_number} onChange={e => setForm({...form, aadhar_number: e.target.value})} className={inputCls} />
             </div>
-            <div className="col-span-1"></div>
-
+            <div>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Mode of Payment</label>
+              <select value={form.payment_mode} onChange={e => setForm({...form, payment_mode: e.target.value})} className={inputCls}>
+                <option value="Cash">Cash</option>
+                <option value="Bank">Bank</option>
+              </select>
+            </div>
+            
             <div className="md:col-span-2 bg-slate-50 rounded-2xl p-6 border-2 border-slate-100">
               <h4 className="text-sm font-bold text-slate-800 mb-4">Bank Details</h4>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

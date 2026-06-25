@@ -1,6 +1,8 @@
 const express = require('express');
 const cors = require('cors');
+const nodemailer = require('nodemailer');
 require('dotenv').config();
+const bcrypt = require('bcrypt');
 
 const app = express();
 app.use(cors());
@@ -12,14 +14,204 @@ const db = require('./db');
 app.post('/api/login', async (req, res) => {
   try {
     const { username, password } = req.body;
-    if (username === 'ravi' && password === 'ravi@2026') {
-      return res.json({ role: 'admin', branch_name: 'Admin Dashboard' });
+    const adminResult = await db.query('SELECT * FROM admin_users WHERE username = $1 OR email = $1', [username]);
+    if (adminResult.rows.length > 0) {
+      const admin = adminResult.rows[0];
+      const match = await bcrypt.compare(password, admin.password_hash);
+      if (match) {
+        return res.json({ role: 'admin', branch_name: 'Admin Dashboard', username: admin.username, email: admin.email });
+      }
     }
     const result = await db.query('SELECT * FROM branches WHERE username = $1 AND password = $2', [username, password]);
     if (result.rows.length > 0) {
       return res.json({ role: 'manager', branch_id: result.rows[0].id, branch_name: result.rows[0].name });
     }
     return res.status(401).json({ error: 'Invalid credentials' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Admin Profile & Auth ---
+const otpStore = {}; // in-memory store for demo: email -> { otp, expiresAt }
+
+const generateEmailTemplate = (otp) => `
+<div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 500px; margin: 0 auto; padding: 30px; background-color: #f8fafc; border-radius: 16px; border: 1px solid #e2e8f0;">
+  <div style="text-align: center; margin-bottom: 30px;">
+    <div style="display: inline-block; background: linear-gradient(135deg, #4f46e5, #7c3aed); padding: 12px; border-radius: 12px;">
+      <h1 style="color: #ffffff; margin: 0; font-size: 20px; font-weight: 800; letter-spacing: 1px;">PHV HRM</h1>
+    </div>
+  </div>
+  <div style="background-color: #ffffff; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); text-align: center;">
+    <h2 style="color: #1e293b; margin-top: 0; margin-bottom: 10px; font-size: 24px;">Admin Verification</h2>
+    <p style="color: #64748b; font-size: 15px; margin-bottom: 25px; line-height: 1.5;">You have requested to verify your identity or reset your credentials. Please use the secure OTP below.</p>
+    <div style="background-color: #f1f5f9; border: 2px dashed #cbd5e1; border-radius: 8px; padding: 15px; margin-bottom: 25px;">
+      <strong style="font-size: 32px; color: #4f46e5; letter-spacing: 6px;">${otp}</strong>
+    </div>
+    <p style="color: #94a3b8; font-size: 13px; margin: 0;">This code will securely expire in <strong style="color: #64748b;">10 minutes</strong>.</p>
+  </div>
+  <p style="text-align: center; color: #94a3b8; font-size: 12px; margin-top: 30px;">If you did not request this code, please ignore this email or contact support.</p>
+</div>
+`;
+
+app.post('/api/admin/send-otp', async (req, res) => {
+  try {
+    const { email } = req.body;
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    otpStore[email] = { otp, expiresAt: Date.now() + 10 * 60 * 1000 };
+    
+    // Send email using Brevo REST API
+    if (process.env.BREVO_API_KEY && process.env.BREVO_SENDER_EMAIL) {
+      const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'accept': 'application/json',
+          'api-key': process.env.BREVO_API_KEY,
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+          sender: {
+            name: "PHV HRM Admin",
+            email: process.env.BREVO_SENDER_EMAIL
+          },
+          to: [{ email: email }],
+          subject: 'PHV HRM - Admin Verification OTP',
+          htmlContent: generateEmailTemplate(otp),
+          textContent: `Your OTP for PHV HRM Admin Settings is: ${otp}. It will expire in 10 minutes.`
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('Brevo API Error:', errorData);
+        throw new Error('Failed to send email via Brevo API. Please check your API key and Sender Email.');
+      }
+
+      console.log(`Real email sent to ${email} via Brevo API`);
+      res.json({ message: 'OTP sent successfully to your email.' });
+    } else {
+      // Fallback to console
+      console.log(`\n=== MOCK EMAIL SENT ===\nTo: ${email}\nOTP: ${otp}\n=======================\n`);
+      res.json({ message: 'OTP mock sent (check server console)' });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/verify-otp', async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+    const stored = otpStore[email];
+    if (!stored || stored.otp !== otp || stored.expiresAt < Date.now()) {
+      return res.status(400).json({ error: 'Invalid or expired OTP' });
+    }
+    // We don't delete it yet because update-profile still needs to verify it,
+    // or we can set a flag that it's verified. We'll just leave it and verify again on update.
+    res.json({ message: 'OTP verified successfully' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/update-profile', async (req, res) => {
+  try {
+    const { currentUsername, newUsername, newEmail, otp, newPassword } = req.body;
+    
+    // Verify OTP again just to be safe
+    const stored = otpStore[newEmail];
+    if (!stored || stored.otp !== otp || stored.expiresAt < Date.now()) {
+      return res.status(400).json({ error: 'Invalid or expired OTP' });
+    }
+    
+    // Hash new password
+    const h = await bcrypt.hash(newPassword, 10);
+    
+    // Update admin user
+    // We assume there's only one admin user (id=1) or we match by current username
+    const result = await db.query(
+      'UPDATE admin_users SET username = $1, email = $2, password_hash = $3 RETURNING *',
+      [newUsername, newEmail, h]
+    );
+    
+    delete otpStore[newEmail]; // clear OTP
+    
+    res.json({ message: 'Profile updated successfully', user: { username: result.rows[0].username, email: result.rows[0].email } });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Forgot Password Flow
+app.post('/api/admin/forgot-password/send-otp', async (req, res) => {
+  try {
+    const { username } = req.body;
+    
+    // Check if it's a branch user
+    const branchRes = await db.query('SELECT * FROM branches WHERE username = $1', [username]);
+    if (branchRes.rows.length > 0) {
+      return res.status(403).json({ error: "Access Denied: Branch accounts cannot reset passwords here. Please contact the Administrator." });
+    }
+
+    // Check if it's admin
+    const adminRes = await db.query('SELECT * FROM admin_users WHERE username = $1', [username]);
+    if (adminRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Username not found' });
+    }
+
+    const email = adminRes.rows[0].email;
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    otpStore[email] = { otp, expiresAt: Date.now() + 10 * 60 * 1000 };
+
+    if (process.env.BREVO_API_KEY && process.env.BREVO_SENDER_EMAIL) {
+      const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'accept': 'application/json',
+          'api-key': process.env.BREVO_API_KEY,
+          'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+          sender: { name: "PHV HRM Admin", email: process.env.BREVO_SENDER_EMAIL },
+          to: [{ email: email }],
+          subject: 'PHV HRM - Password Reset OTP',
+          htmlContent: generateEmailTemplate(otp),
+          textContent: `Your OTP for PHV HRM Password Reset is: ${otp}. It will expire in 10 minutes.`
+        })
+      });
+
+      if (!response.ok) {
+        console.error('Brevo API Error:', await response.json());
+        throw new Error('Failed to send email via Brevo API.');
+      }
+      
+      const maskedEmail = email.substring(0, 2) + '****' + email.substring(email.indexOf('@'));
+      res.json({ message: `OTP sent successfully to ${maskedEmail}`, email });
+    } else {
+      console.log(`\n=== MOCK EMAIL SENT ===\nTo: ${email}\nOTP: ${otp}\n=======================\n`);
+      const maskedEmail = email.substring(0, 2) + '****' + email.substring(email.indexOf('@'));
+      res.json({ message: `OTP mock sent to ${maskedEmail} (check console)`, email });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/forgot-password/reset', async (req, res) => {
+  try {
+    const { email, otp, newPassword } = req.body;
+    
+    const stored = otpStore[email];
+    if (!stored || stored.otp !== otp || stored.expiresAt < Date.now()) {
+      return res.status(400).json({ error: 'Invalid or expired OTP' });
+    }
+    
+    const h = await bcrypt.hash(newPassword, 10);
+    await db.query('UPDATE admin_users SET password_hash = $1 WHERE email = $2', [h, email]);
+    
+    delete otpStore[email];
+    
+    res.json({ message: 'Password reset successfully. You can now login.' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -200,7 +392,7 @@ app.post('/api/employees', async (req, res) => {
       department_id, shift_id, phone, address, pan_number, aadhar_number,
       bank_name, bank_account_number, bank_ifsc, bank_branch,
       has_epf, has_pt, has_esi, branch_id,
-      epf_number, epf_amount, esi_number, esi_amount
+      epf_number, epf_amount, esi_number, esi_amount, payment_mode
     } = req.body;
 
     if (!employee_number) {
@@ -213,14 +405,14 @@ app.post('/api/employees', async (req, res) => {
         department_id, shift_id, phone, address, pan_number, aadhar_number,
         bank_name, bank_account_number, bank_ifsc, bank_branch,
         has_epf, has_pt, has_esi, branch_id,
-        epf_number, epf_amount, esi_number, esi_amount
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25) RETURNING *
+        epf_number, epf_amount, esi_number, esi_amount, payment_mode
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26) RETURNING *
     `, [
       name, email, employee_number, designation, package_ctc, work_type, joining_date,
       department_id || null, shift_id || null, phone, address, pan_number, aadhar_number,
       bank_name, bank_account_number, bank_ifsc, bank_branch,
       has_epf, has_pt, has_esi, branch_id || null,
-      epf_number || null, epf_amount || 0, esi_number || null, esi_amount || 0
+      epf_number || null, epf_amount || 0, esi_number || null, esi_amount || 0, payment_mode || 'Cash'
     ]);
     res.json(result.rows[0]);
   } catch (err) {
@@ -239,7 +431,7 @@ app.put('/api/employees/:id', async (req, res) => {
       department_id, shift_id, phone, address, pan_number, aadhar_number,
       bank_name, bank_account_number, bank_ifsc, bank_branch,
       has_epf, has_pt, has_esi,
-      epf_number, epf_amount, esi_number, esi_amount
+      epf_number, epf_amount, esi_number, esi_amount, payment_mode
     } = req.body;
 
     const result = await db.query(`
@@ -248,21 +440,32 @@ app.put('/api/employees/:id', async (req, res) => {
         department_id=$8, shift_id=$9, phone=$10, address=$11, pan_number=$12, aadhar_number=$13,
         bank_name=$14, bank_account_number=$15, bank_ifsc=$16, bank_branch=$17,
         has_epf=$18, has_pt=$19, has_esi=$20,
-        epf_number=$21, epf_amount=$22, esi_number=$23, esi_amount=$24
-      WHERE id=$25 RETURNING *
+        epf_number=$21, epf_amount=$22, esi_number=$23, esi_amount=$24, payment_mode=$25
+      WHERE id=$26 RETURNING *
     `, [
       name, email, employee_number, designation, package_ctc, work_type, joining_date,
       department_id || null, shift_id || null, phone, address, pan_number, aadhar_number,
       bank_name, bank_account_number, bank_ifsc, bank_branch,
       has_epf, has_pt, has_esi,
-      epf_number || null, epf_amount || 0, esi_number || null, esi_amount || 0,
+      epf_number || null, epf_amount || 0, esi_number || null, esi_amount || 0, payment_mode || 'Cash',
       id
     ]);
+
     res.json(result.rows[0]);
   } catch (err) {
     if (err.code === '23505') {
       return res.status(400).json({ error: `Employee '${req.body.name}' already exists (Duplicate Email or Employee Number).` });
     }
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/employees/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await db.query('DELETE FROM employees WHERE id = $1', [id]);
+    res.json({ success: true });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
@@ -338,6 +541,7 @@ app.get('/api/payroll-data', async (req, res) => {
       SELECT 
         employee_id,
         COUNT(CASE WHEN status = 'Present' THEN 1 END)::int as present_count,
+        COUNT(CASE WHEN status = 'HalfDay' THEN 1 END)::int as halfday_count,
         COUNT(CASE WHEN status = 'Absent' THEN 1 END)::int as absent_count,
         COUNT(CASE WHEN status = 'WeekOff' THEN 1 END)::int as weekoff_count,
         COALESCE(SUM(ot_hours), 0)::int as total_ot,

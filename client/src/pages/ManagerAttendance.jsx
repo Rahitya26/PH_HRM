@@ -1,7 +1,7 @@
 import { useState, useEffect, useContext } from 'react';
 import axios from 'axios';
 import { AuthContext } from '../context/AuthContext';
-import { LogOut, Calendar, Building2, Save, Users } from 'lucide-react';
+import { LogOut, Calendar, Building2, Save, Users, ChevronDown, ChevronUp } from 'lucide-react';
 import { createPortal } from 'react-dom';
 
 export default function ManagerAttendance() {
@@ -17,9 +17,14 @@ export default function ManagerAttendance() {
   const [initialRecords, setInitialRecords] = useState({});
   const [hasChanges, setHasChanges] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
-  const [isLocked, setIsLocked] = useState(false);
+  const [submittedEmployees, setSubmittedEmployees] = useState(new Set());
   const [loanState, setLoanState] = useState({});
   const [loanModal, setLoanModal] = useState({ open: false, emp: null, amount: '', deduction: '', startMonth: '' });
+  const [expandedCards, setExpandedCards] = useState({});
+
+  const toggleCard = (id) => {
+    setExpandedCards(prev => ({ ...prev, [id]: !prev[id] }));
+  };
 
   useEffect(() => {
     if (user?.branch_id) {
@@ -39,7 +44,9 @@ export default function ManagerAttendance() {
       axios.get(`/api/attendance?branch_id=${user.branch_id}&date=${date}`)
         .then(res => {
           const fetchedRecords = {};
+          const submitted = new Set();
           res.data.forEach(r => {
+            submitted.add(r.employee_id);
             fetchedRecords[r.employee_id] = {
               status: r.status,
               ot_hours: r.ot_hours || '',
@@ -58,7 +65,7 @@ export default function ManagerAttendance() {
           setRecords(fetchedRecords);
           setInitialRecords(JSON.parse(JSON.stringify(fetchedRecords)));
           setHasChanges(false);
-          setIsLocked(res.data.length > 0);
+          setSubmittedEmployees(submitted);
         })
         .catch(err => console.error(err))
         .finally(() => setIsLoading(false));
@@ -101,18 +108,29 @@ export default function ManagerAttendance() {
       const payload = {
         branch_id: user.branch_id,
         date: date,
-        records: Object.keys(records).map(empId => ({
-          employee_id: empId,
-          status: records[empId].status,
-          ot_hours: parseInt(records[empId].ot_hours) || 0,
-          salary_advance: parseInt(records[empId].salary_advance) || 0,
-          other_allowance: parseInt(records[empId].other_allowance) || 0
-        }))
+        records: Object.keys(records)
+          .filter(empId => !submittedEmployees.has(parseInt(empId)))
+          .map(empId => ({
+            employee_id: empId,
+            status: records[empId].status,
+            ot_hours: parseInt(records[empId].ot_hours) || 0,
+            salary_advance: parseInt(records[empId].salary_advance) || 0,
+            other_allowance: parseInt(records[empId].other_allowance) || 0
+          }))
       };
+      
+      if (payload.records.length === 0) {
+        return alert('No new attendance records to save.');
+      }
+
       await axios.post('/api/attendance', payload);
+      
+      const newSubmitted = new Set(submittedEmployees);
+      payload.records.forEach(r => newSubmitted.add(parseInt(r.employee_id)));
+      
       setInitialRecords(JSON.parse(JSON.stringify(records)));
       setHasChanges(false);
-      setIsLocked(true);
+      setSubmittedEmployees(newSubmitted);
       alert('Attendance saved successfully');
     } catch (err) {
       console.error(err);
@@ -155,9 +173,11 @@ export default function ManagerAttendance() {
     }
   };
 
-  const filteredEmployees = selectedDept 
-    ? employees.filter(e => e.department_id == selectedDept)
-    : employees;
+  const filteredEmployees = employees.filter(e => {
+    const isDeptMatch = selectedDept ? e.department_id == selectedDept : true;
+    const isJoined = !e.joining_date || (new Date(e.joining_date).toISOString().split('T')[0] <= date);
+    return isDeptMatch && isJoined;
+  });
 
   // Sort alphabetically
   const sortedEmployees = [...filteredEmployees].sort((a, b) => a.name.localeCompare(b.name));
@@ -169,7 +189,7 @@ export default function ManagerAttendance() {
         <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
           <div>
             <h1 className="text-xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-700 to-purple-700 tracking-tight leading-none">
-              Ravi's HRM
+              PHV HRM
             </h1>
             <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1 flex items-center gap-1">
               <Building2 size={10} /> {user?.branch_name || 'Branch'} Portal
@@ -191,7 +211,6 @@ export default function ManagerAttendance() {
             <div>
               <div className="flex items-center gap-3">
                 <h2 className="text-lg font-extrabold text-slate-800 tracking-tight">Daily Attendance</h2>
-                {isLocked && <span className="bg-emerald-100 text-emerald-700 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border border-emerald-200">Locked</span>}
               </div>
               <p className="text-sm font-bold text-slate-500">{employees.length} Total Employees</p>
             </div>
@@ -224,11 +243,15 @@ export default function ManagerAttendance() {
         </div>
 
         {isLoading ? (
-          <div className="text-center py-20 text-slate-400 font-bold">Loading records...</div>
+          <div className="flex flex-col items-center justify-center py-24 px-4 bg-white rounded-3xl border border-slate-200 shadow-sm text-center">
+            <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-4"></div>
+            <h3 className="text-xl font-extrabold text-slate-700 tracking-tight">Loading Records...</h3>
+            <p className="text-sm font-medium text-slate-500 max-w-sm mt-1">Please wait while we fetch the attendance data.</p>
+          </div>
         ) : (
           <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left border-collapse min-w-[900px]">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200">
                     <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-wider">Employee</th>
@@ -255,13 +278,15 @@ export default function ManagerAttendance() {
                           </td>
                           <td className="px-6 py-4">
                             <div className="flex items-center justify-center gap-2">
-                              {['Present', 'Absent', 'WeekOff'].map(status => {
-                                const labels = { Present: 'P', Absent: 'A', WeekOff: 'W' };
+                              {['Present', 'Absent', 'WeekOff', 'HalfDay'].map(status => {
+                                const labels = { Present: 'P', Absent: 'A', WeekOff: 'W', HalfDay: 'H' };
                                 const colors = {
                                   Present: 'peer-checked:bg-emerald-500 peer-checked:border-emerald-500',
                                   Absent: 'peer-checked:bg-red-500 peer-checked:border-red-500',
-                                  WeekOff: 'peer-checked:bg-amber-500 peer-checked:border-amber-500'
+                                  WeekOff: 'peer-checked:bg-amber-500 peer-checked:border-amber-500',
+                                  HalfDay: 'peer-checked:bg-blue-500 peer-checked:border-blue-500'
                                 };
+                                const isEmpLocked = submittedEmployees.has(emp.id);
                                 return (
                                   <label key={status} className="relative cursor-pointer group">
                                     <input 
@@ -270,10 +295,10 @@ export default function ManagerAttendance() {
                                       value={status}
                                       checked={rec.status === status}
                                       onChange={() => handleRecordChange(emp.id, 'status', status)}
-                                      disabled={isLocked}
+                                      disabled={isEmpLocked}
                                       className="peer sr-only"
                                     />
-                                    <div className={`w-8 h-8 rounded-lg border-2 border-slate-200 flex items-center justify-center text-xs font-black transition-all ${isLocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-slate-300'} text-slate-400 peer-checked:text-white ${colors[status]}`}>
+                                    <div className={`w-8 h-8 rounded-lg border-2 border-slate-200 flex items-center justify-center text-xs font-black transition-all ${isEmpLocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-slate-300'} text-slate-400 peer-checked:text-white ${colors[status]}`}>
                                       {labels[status]}
                                     </div>
                                   </label>
@@ -287,7 +312,7 @@ export default function ManagerAttendance() {
                               value={rec.ot_hours} 
                               onChange={(e) => handleOtChange(emp.id, e.target.value)}
                               placeholder="0"
-                              disabled={isLocked}
+                              disabled={submittedEmployees.has(emp.id)}
                               className="w-full px-3 py-2 bg-slate-50 border-2 border-slate-100 rounded-lg text-sm font-bold text-slate-800 focus:border-indigo-500 outline-none text-center disabled:opacity-60 disabled:cursor-not-allowed"
                             />
                           </td>
@@ -305,7 +330,7 @@ export default function ManagerAttendance() {
                               value={rec.other_allowance} 
                               onChange={(e) => handleAllowanceChange(emp.id, e.target.value)}
                               placeholder="0"
-                              disabled={isLocked}
+                              disabled={submittedEmployees.has(emp.id)}
                               className="w-full px-3 py-2 bg-slate-50 border-2 border-slate-100 rounded-lg text-sm font-bold text-slate-800 focus:border-indigo-500 outline-none text-center disabled:opacity-60 disabled:cursor-not-allowed"
                             />
                           </td>
@@ -315,7 +340,7 @@ export default function ManagerAttendance() {
                               value={rec.salary_advance} 
                               onChange={(e) => handleAdvanceChange(emp.id, e.target.value)}
                               placeholder="0"
-                              disabled={isLocked}
+                              disabled={submittedEmployees.has(emp.id)}
                               className="w-full px-3 py-2 bg-slate-50 border-2 border-slate-100 rounded-lg text-sm font-bold text-slate-800 focus:border-indigo-500 outline-none text-center disabled:opacity-60 disabled:cursor-not-allowed"
                             />
                           </td>
@@ -326,11 +351,128 @@ export default function ManagerAttendance() {
                 </tbody>
               </table>
             </div>
+
+            {/* Mobile Card View */}
+            <div className="md:hidden divide-y divide-slate-100">
+              {sortedEmployees.length === 0 ? (
+                <div className="px-6 py-8 text-center text-sm font-bold text-slate-400">No employees found.</div>
+              ) : (
+                sortedEmployees.map((emp) => {
+                  const rec = records[emp.id] || { status: 'Present', ot_hours: '', salary_advance: '', other_allowance: '' };
+                  const isEmpLocked = submittedEmployees.has(emp.id);
+                  const empLoan = loanState[emp.id] || { outstanding: 0 };
+                  const isExpanded = !!expandedCards[emp.id];
+
+                  return (
+                    <div key={emp.id} className="p-3 bg-white">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1 min-w-0 pr-2">
+                          <p className="text-sm font-bold text-slate-800 leading-tight truncate">{emp.name}</p>
+                          <p className="text-[10px] font-semibold text-slate-400 mt-0.5 truncate">{emp.department_name || 'No Dept'}</p>
+                        </div>
+                        
+                        <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1.5">
+                            {['Present', 'Absent', 'WeekOff', 'HalfDay'].map(status => {
+                              const labels = { Present: 'P', Absent: 'A', WeekOff: 'W', HalfDay: 'H' };
+                              const colors = {
+                                Present: 'peer-checked:bg-emerald-500 peer-checked:border-emerald-500',
+                                Absent: 'peer-checked:bg-red-500 peer-checked:border-red-500',
+                                WeekOff: 'peer-checked:bg-amber-500 peer-checked:border-amber-500',
+                                HalfDay: 'peer-checked:bg-blue-500 peer-checked:border-blue-500'
+                              };
+                              return (
+                                <label key={status} className="relative cursor-pointer group">
+                                  <input 
+                                    type="radio" 
+                                    name={`status-mob-${emp.id}`} 
+                                    value={status}
+                                    checked={rec.status === status}
+                                    onChange={() => handleRecordChange(emp.id, 'status', status)}
+                                    disabled={isEmpLocked}
+                                    className="peer sr-only"
+                                  />
+                                  <div className={`w-7 h-7 rounded-md border-2 border-slate-200 flex items-center justify-center text-xs font-black transition-all ${isEmpLocked ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-slate-300'} text-slate-400 peer-checked:text-white ${colors[status]}`}>
+                                    {labels[status]}
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </div>
+                          
+                          <button 
+                            onClick={() => toggleCard(emp.id)}
+                            className="w-6 h-6 ml-1 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-400 hover:text-indigo-500 transition-colors"
+                          >
+                            {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                          </button>
+                        </div>
+                      </div>
+
+                      {isExpanded && (
+                        <div className="pt-3 border-t border-slate-100 mt-3 space-y-3 animate-fade-up">
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1">OT (Hours)</p>
+                              <input 
+                                type="text" 
+                                disabled={isEmpLocked}
+                                value={rec.ot_hours} 
+                                onChange={(e) => handleOtChange(emp.id, e.target.value)}
+                                className={`w-full px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-md text-xs font-bold text-slate-700 focus:border-indigo-500 outline-none transition-colors ${isEmpLocked ? 'cursor-not-allowed opacity-60' : ''}`}
+                                placeholder="0"
+                              />
+                            </div>
+                            <div>
+                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1">Loan</p>
+                              {empLoan.outstanding > 0 ? (
+                                <button disabled={isEmpLocked} onClick={() => setLoanModal({ open: true, emp, amount: empLoan.outstanding, deduction: empLoan.currentDeduction, startMonth: date.slice(0, 7) })} className={`w-full px-2 py-1.5 bg-indigo-50 border border-indigo-100 rounded-md text-xs font-bold text-indigo-700 text-left transition-colors ${isEmpLocked ? 'cursor-not-allowed opacity-60' : 'hover:bg-indigo-100 hover:border-indigo-200'}`}>
+                                  ₹{empLoan.outstanding.toLocaleString('en-IN')}
+                                </button>
+                              ) : (
+                                <button disabled={isEmpLocked} onClick={() => setLoanModal({ open: true, emp, amount: '', deduction: '', startMonth: date.slice(0, 7) })} className={`w-full px-2 py-1.5 bg-slate-50 border border-slate-200 border-dashed rounded-md text-xs font-bold text-slate-400 text-left transition-colors ${isEmpLocked ? 'cursor-not-allowed opacity-60' : 'hover:border-indigo-300 hover:text-indigo-600'}`}>
+                                  + Add Loan
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1">Allowance (₹)</p>
+                              <input 
+                                type="text" 
+                                disabled={isEmpLocked}
+                                value={rec.other_allowance} 
+                                onChange={(e) => handleAllowanceChange(emp.id, e.target.value)}
+                                className={`w-full px-2 py-1.5 bg-emerald-50/50 border border-emerald-100 rounded-md text-xs font-bold text-emerald-700 focus:border-emerald-500 outline-none transition-colors ${isEmpLocked ? 'cursor-not-allowed opacity-60' : ''}`}
+                                placeholder="0"
+                              />
+                            </div>
+                            <div>
+                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1">Advance (₹)</p>
+                              <input 
+                                type="text" 
+                                disabled={isEmpLocked}
+                                value={rec.salary_advance} 
+                                onChange={(e) => handleAdvanceChange(emp.id, e.target.value)}
+                                className={`w-full px-2 py-1.5 bg-red-50/50 border border-red-100 rounded-md text-xs font-bold text-red-700 focus:border-red-500 outline-none transition-colors ${isEmpLocked ? 'cursor-not-allowed opacity-60' : ''}`}
+                                placeholder="0"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </div>
         )}
       </main>
 
-      {(!isLocked && employees.length > 0) && createPortal(
+      {employees.length > 0 && submittedEmployees.size < employees.length && createPortal(
         <div className="fixed bottom-0 left-0 w-full z-50 animate-in slide-in-from-bottom-10 fade-in duration-300 pointer-events-none">
           <div className="max-w-xl mx-auto mb-6 px-4 pointer-events-auto">
             <div className="bg-slate-900 text-white rounded-2xl p-4 shadow-2xl flex flex-col sm:flex-row items-center justify-between gap-4 border border-slate-700">

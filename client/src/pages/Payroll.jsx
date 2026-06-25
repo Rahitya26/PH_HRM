@@ -2,7 +2,7 @@ import { useState, useEffect, useContext } from 'react';
 import { createPortal } from 'react-dom';
 import axios from 'axios';
 import { BranchContext } from '../context/BranchContext';
-import { Settings, Download, CheckCircle2, XCircle, Calculator, FileSpreadsheet } from 'lucide-react';
+import { Settings, Download, CheckCircle2, XCircle, Calculator, FileSpreadsheet, ChevronDown, ChevronUp } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 export default function Payroll() {
@@ -13,13 +13,28 @@ export default function Payroll() {
   const [payrollData, setPayrollData] = useState([]);
   const [loanState, setLoanState] = useState({});
   const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [isLoading, setIsLoading] = useState(true);
+  const [expandedCards, setExpandedCards] = useState({});
+
+  const toggleCard = (id) => {
+    setExpandedCards(prev => ({ ...prev, [id]: !prev[id] }));
+  };
 
   useEffect(() => {
     if (selectedBranch) {
-      axios.get(`/api/employees?branch_id=${selectedBranch}`).then(res => setEmployees(res.data));
-      axios.get(`/api/departments?branch_id=${selectedBranch}`).then(res => setDepartments(res.data));
-      axios.get(`/api/payroll-data?branch_id=${selectedBranch}&month=${selectedMonth}`).then(res => setPayrollData(res.data));
-      axios.get(`/api/loans/state?branch_id=${selectedBranch}&month=${selectedMonth}`).then(res => setLoanState(res.data));
+      setIsLoading(true);
+      Promise.all([
+        axios.get(`/api/employees?branch_id=${selectedBranch}`),
+        axios.get(`/api/departments?branch_id=${selectedBranch}`),
+        axios.get(`/api/payroll-data?branch_id=${selectedBranch}&month=${selectedMonth}`),
+        axios.get(`/api/loans/state?branch_id=${selectedBranch}&month=${selectedMonth}`)
+      ]).then(([empRes, deptRes, payRes, loanRes]) => {
+        setEmployees(empRes.data);
+        setDepartments(deptRes.data);
+        setPayrollData(payRes.data);
+        setLoanState(loanRes.data);
+      }).catch(err => console.error(err))
+        .finally(() => setIsLoading(false));
     }
   }, [selectedBranch, selectedMonth]);
 
@@ -37,7 +52,7 @@ export default function Payroll() {
 
   const getPayrollDetails = (emp) => {
     const record = payrollData.find(r => r.employee_id === emp.id) || {
-      present_count: 0, absent_count: 0, weekoff_count: 0, total_ot: 0, total_advance: 0, total_allowance: 0
+      present_count: 0, halfday_count: 0, absent_count: 0, weekoff_count: 0, total_ot: 0, total_advance: 0, total_allowance: 0
     };
 
     const ctc = Number(emp.package_ctc) || 0;
@@ -50,7 +65,7 @@ export default function Payroll() {
     const hourlyWage = dailyWage / 9;
 
     const allowedWeekOffs = Math.min(4, record.weekoff_count);
-    const payableDays = record.present_count + allowedWeekOffs;
+    const payableDays = record.present_count + (record.halfday_count * 0.5) + allowedWeekOffs;
 
     const earningSalary = payableDays * dailyWage;
     const otEarnings = record.total_ot * hourlyWage;
@@ -93,6 +108,8 @@ export default function Payroll() {
   const filteredEmployees = selectedDept 
     ? employees.filter(e => e.department_id == selectedDept)
     : employees;
+    
+  const sortedDepartments = [...departments].sort((a, b) => a.name.localeCompare(b.name));
 
   const handleDownloadExcel = () => {
     const data = filteredEmployees.map(emp => {
@@ -138,7 +155,7 @@ export default function Payroll() {
             className="bg-white border-2 border-slate-200 text-slate-700 focus:border-indigo-500 px-4 py-2.5 rounded-xl font-bold text-sm transition-all outline-none"
           >
             <option value="">All Departments</option>
-            {departments.map(d => (
+            {sortedDepartments.map(d => (
               <option key={d.id} value={d.id}>{d.name}</option>
             ))}
           </select>
@@ -159,9 +176,16 @@ export default function Payroll() {
         </div>
       </div>
 
-      <div className="bg-white rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+      {isLoading ? (
+        <div className="flex flex-col items-center justify-center py-24 px-4 bg-white rounded-3xl border border-slate-200 shadow-sm text-center">
+          <div className="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-4"></div>
+          <h3 className="text-xl font-extrabold text-slate-700 tracking-tight">Loading Payroll Data...</h3>
+          <p className="text-sm font-medium text-slate-500 max-w-sm mt-1">Please wait while we crunch the numbers.</p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-3xl shadow-xl shadow-slate-200/50 border border-slate-100 overflow-hidden">
+        <div className="hidden md:block overflow-x-auto">
+          <table className="w-full text-left border-collapse min-w-[1200px]">
             <thead>
               <tr className="bg-slate-50/50 border-b border-slate-100">
                 <th className="py-5 px-6 text-xs font-bold text-slate-500 uppercase tracking-wider min-w-[200px]">Employee Name</th>
@@ -231,7 +255,93 @@ export default function Payroll() {
             </tbody>
           </table>
         </div>
+
+        {/* Mobile Card View */}
+        <div className="md:hidden divide-y divide-slate-100">
+          {filteredEmployees.length > 0 ? filteredEmployees.map((emp) => {
+            const p = getPayrollDetails(emp);
+            const isExpanded = !!expandedCards[emp.id];
+            
+            return (
+              <div key={emp.id} className="p-3 bg-white">
+                <div 
+                  className="flex justify-between items-center cursor-pointer pb-2"
+                  onClick={() => toggleCard(emp.id)}
+                >
+                  <div className="flex-1 min-w-0 pr-2">
+                    <span className="font-extrabold text-slate-800 text-sm block leading-tight truncate">{emp.name}</span>
+                    <span className="text-[10px] font-bold text-slate-400 mt-0.5 truncate block">{emp.department_name || 'NA'}</span>
+                  </div>
+                  <div className="text-right flex items-center gap-3">
+                    <div>
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block mb-0.5">Take Hand</span>
+                      <span className="font-black text-indigo-600 text-sm">{formatCurrency(p.takeHandSalary)}</span>
+                    </div>
+                    <div className="w-6 h-6 rounded-full bg-slate-50 border border-slate-200 flex items-center justify-center text-slate-400">
+                      {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    </div>
+                  </div>
+                </div>
+
+                {isExpanded && (
+                  <div className="pt-3 border-t border-slate-100 space-y-2 mt-2 animate-fade-up">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="bg-slate-50 rounded-lg p-2">
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block mb-0.5">Gross Salary</span>
+                        <span className="font-bold text-slate-600 text-xs">{formatCurrency(p.monthlyGross)}</span>
+                      </div>
+                      <div className="bg-emerald-50/50 border border-emerald-100/50 rounded-lg p-2">
+                        <span className="text-[9px] font-black text-emerald-600/70 uppercase tracking-wider block mb-0.5">Earning Salary</span>
+                        <div className="text-emerald-700 font-extrabold text-xs">{formatCurrency(p.earningSalary)}</div>
+                        <div className="text-[8px] font-bold text-emerald-600/70 mt-0.5">({p.payableDays} days)</div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="bg-emerald-50/50 border border-emerald-100/50 rounded-lg p-2">
+                        <span className="text-[9px] font-black text-emerald-600/70 uppercase tracking-wider block mb-0.5">OT Earnings</span>
+                        <div className="text-emerald-700 font-extrabold text-xs">{formatCurrency(p.otEarnings)}</div>
+                        <div className="text-[8px] font-bold text-emerald-600/70 mt-0.5">({p.otHours} hrs)</div>
+                      </div>
+                      <div className="bg-slate-50 rounded-lg p-2">
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block mb-0.5">Outstand. Loan</span>
+                        <span className="font-bold text-slate-600 text-xs">{formatCurrency(p.outstandingLoan)}</span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 bg-red-50/50 border border-red-100/50 rounded-lg p-2">
+                      <div>
+                        <span className="text-[8px] font-black text-red-400 uppercase tracking-wider block mb-0.5">Advance</span>
+                        <span className="font-extrabold text-red-600 text-[10px]">{p.salaryAdvance > 0 ? `-${formatCurrency(p.salaryAdvance)}` : '0'}</span>
+                      </div>
+                      <div>
+                        <span className="text-[8px] font-black text-red-400 uppercase tracking-wider block mb-0.5">Loan Ded.</span>
+                        <span className="font-extrabold text-red-600 text-[10px]">{p.loanDeduction > 0 ? `-${formatCurrency(p.loanDeduction)}` : '0'}</span>
+                      </div>
+                      <div>
+                        <span className="text-[8px] font-black text-red-400 uppercase tracking-wider block mb-0.5">Other</span>
+                        <span className="font-extrabold text-red-600 text-[10px]">{(p.epf + p.esi + p.pt) > 0 ? `-${formatCurrency(p.epf + p.esi + p.pt)}` : '0'}</span>
+                        {(p.epf + p.esi + p.pt) > 0 && (
+                          <div className="text-[7px] text-red-500 font-bold mt-1 leading-tight">
+                            {p.epf > 0 && <div>EPF: ₹{p.epf}</div>}
+                            {p.esi > 0 && <div>ESI: ₹{p.esi}</div>}
+                            {p.pt > 0 && <div>PT: ₹{p.pt}</div>}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          }) : (
+            <div className="p-8 text-center text-slate-500 font-medium">
+              No employees found. Onboard someone to view payroll.
+            </div>
+          )}
+        </div>
       </div>
+      )}
     </div>
   );
 }
