@@ -23,6 +23,7 @@ export default function Onboarding() {
   const [nextEmpNumber, setNextEmpNumber] = useState('Loading...');
   
   const [showBulkDropdown, setShowBulkDropdown] = useState(false);
+  const [bulkSuccessCount, setBulkSuccessCount] = useState(0);
   const [showMismatchModal, setShowMismatchModal] = useState(false);
   const [importMismatches, setImportMismatches] = useState([]);
   const fileInputRef = useRef(null);
@@ -101,6 +102,7 @@ export default function Onboarding() {
       const json = XLSX.utils.sheet_to_json(ws);
       
       let mismatches = [];
+      let successCount = 0;
       const defaultShift = shifts.find(s => s.is_default) || shifts[0];
       
       for(let row of json) {
@@ -156,7 +158,8 @@ export default function Onboarding() {
         
         const payload = {
           name: row["Full Name"] || '',
-          email: row["Email Address"] || '',
+          employee_number: row["Employee Number"] || '',
+          email: row["Email Address"] || `${(row["Employee Number"] || 'emp' + Math.floor(Math.random() * 100000)).toString().toLowerCase()}@noemail.com`,
           designation: row["Designation"] || '',
           package_ctc: row["Package"] ? row["Package"].toString().replace(/[^0-9]/g, '') : 0,
           work_type: normalizeWorkType(row["Work Type"]),
@@ -183,19 +186,21 @@ export default function Onboarding() {
 
         try {
           await axios.post('/api/employees', payload);
+          successCount++;
           
           // Only log department/shift mismatches if the employee was successfully inserted
           if(mismatchMsg.length > 0) {
-            mismatches.push({ name: row["Full Name"] || 'Unknown Employee', messages: mismatchMsg });
+            mismatches.push({ name: row["Full Name"] || row["Employee Number"] || 'Unknown Employee', messages: mismatchMsg });
           }
         } catch(err) {
-          mismatches.push({ name: row["Full Name"] || 'Unknown Employee', messages: ["Failed to insert record: " + (err.response?.data?.error || err.message)]});
+          mismatches.push({ name: row["Full Name"] || row["Employee Number"] || 'Unknown Employee', messages: ["Failed to insert record: " + (err.response?.data?.error || err.message)]});
         }
       }
       
       fileInputRef.current.value = "";
       setShowBulkDropdown(false);
       setImportMismatches(mismatches);
+      setBulkSuccessCount(successCount);
       setShowMismatchModal(true);
     };
     reader.readAsBinaryString(file);
@@ -238,7 +243,8 @@ export default function Onboarding() {
           <div className="bg-white rounded-2xl p-6 max-w-lg w-full shadow-2xl flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200 border border-slate-100">
             <h2 className="text-xl font-bold text-slate-800 mb-2">Bulk Import Completed</h2>
             <p className="text-slate-500 mb-4 text-sm font-medium">
-              Upload finished. {importMismatches.length === 0 ? 'All records processed cleanly!' : `We found ${importMismatches.length} records with issues or missing data.`}
+              <strong className="text-emerald-600 block text-lg mb-1">{bulkSuccessCount} employee(s) added successfully.</strong>
+              {importMismatches.length === 0 ? 'All records processed cleanly!' : `We found ${importMismatches.length} records with issues or missing data.`}
             </p>
             
             {importMismatches.length > 0 && (
