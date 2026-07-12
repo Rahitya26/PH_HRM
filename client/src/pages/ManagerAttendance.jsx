@@ -1,7 +1,7 @@
 import { useState, useEffect, useContext } from 'react';
 import axios from 'axios';
 import { AuthContext } from '../context/AuthContext';
-import { LogOut, Calendar, Building2, Save, Users, ChevronDown, ChevronUp } from 'lucide-react';
+import { LogOut, Calendar, Building2, Save, Users, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 
 export default function ManagerAttendance() {
@@ -21,6 +21,7 @@ export default function ManagerAttendance() {
   const [loanState, setLoanState] = useState({});
   const [loanModal, setLoanModal] = useState({ open: false, emp: null, amount: '', deduction: '', startMonth: '' });
   const [expandedCards, setExpandedCards] = useState({});
+  const [isSaving, setIsSaving] = useState(false);
 
   const toggleCard = (id) => {
     setExpandedCards(prev => ({ ...prev, [id]: !prev[id] }));
@@ -104,6 +105,7 @@ export default function ManagerAttendance() {
   };
 
   const handleSave = async () => {
+    setIsSaving(true);
     try {
       const payload = {
         branch_id: user.branch_id,
@@ -135,6 +137,8 @@ export default function ManagerAttendance() {
     } catch (err) {
       console.error(err);
       alert('Failed to save attendance');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -481,9 +485,11 @@ export default function ManagerAttendance() {
               </div>
               <button 
                 onClick={handleSave} 
-                className="w-full sm:w-auto bg-indigo-500 hover:bg-indigo-400 text-white px-6 py-2.5 rounded-xl text-sm font-bold transition-all shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2"
+                disabled={isSaving}
+                className="w-full sm:w-auto bg-indigo-500 hover:bg-indigo-400 text-white px-6 py-2.5 rounded-xl text-sm font-bold transition-all shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Save size={16} /> Save Attendance
+                {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} 
+                {isSaving ? 'Saving...' : 'Save Attendance'}
               </button>
             </div>
           </div>

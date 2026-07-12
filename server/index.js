@@ -503,7 +503,11 @@ app.get('/api/dashboard/stats', async (req, res) => {
 // --- Attendance ---
 app.get('/api/attendance', async (req, res) => {
   try {
-    const { branch_id, date } = req.query;
+    const { branch_id, date, start_date, end_date } = req.query;
+    if (start_date && end_date) {
+      const result = await db.query('SELECT * FROM attendance WHERE branch_id = $1 AND date >= $2 AND date <= $3 ORDER BY date ASC', [branch_id, start_date, end_date]);
+      return res.json(result.rows);
+    }
     const result = await db.query('SELECT * FROM attendance WHERE branch_id = $1 AND date = $2', [branch_id, date]);
     res.json(result.rows);
   } catch (err) {

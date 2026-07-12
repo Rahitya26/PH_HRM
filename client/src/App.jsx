@@ -2,7 +2,7 @@ import { useState, useContext } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import { BranchContext } from './context/BranchContext';
 import { AuthContext } from './context/AuthContext';
-import { LayoutDashboard, Users, UserPlus, Clock, Fingerprint, Hexagon, LogOut, Banknote, Building2, Menu, X } from 'lucide-react';
+import { LayoutDashboard, Users, UserPlus, Clock, Fingerprint, Hexagon, LogOut, Banknote, Building2, Menu, X, Calendar } from 'lucide-react';
 import Login from './pages/Login';
 import ManagerAttendance from './pages/ManagerAttendance';
 import Dashboard from './pages/Dashboard';
@@ -12,6 +12,7 @@ import Shifts from './pages/Shifts';
 import Payroll from './pages/Payroll';
 import Branches from './pages/Branches';
 import AdminProfile from './pages/AdminProfile';
+import AdminAttendance from './pages/AdminAttendance';
 
 function Sidebar({ isOpen, setIsOpen }) {
   const location = useLocation();
@@ -24,6 +25,7 @@ function Sidebar({ isOpen, setIsOpen }) {
     { name: 'Employees', path: '/employees', icon: Users },
     { name: 'Onboarding', path: '/onboarding', icon: UserPlus },
     { name: 'Shifts & Depts', path: '/shifts', icon: Clock },
+    { name: 'Attendance', path: '/attendance', icon: Calendar },
     { name: 'Payroll', path: '/payroll', icon: Banknote },
     { name: 'Branches', path: '/branches', icon: Building2 },
   ];
@@ -173,6 +175,7 @@ function App() {
                 <Route path="/employees" element={<Employees />} />
                 <Route path="/onboarding" element={<Onboarding />} />
                 <Route path="/shifts" element={<Shifts />} />
+                <Route path="/attendance" element={<AdminAttendance />} />
                 <Route path="/payroll" element={<Payroll />} />
                 <Route path="/branches" element={<Branches />} />
                 <Route path="/admin-profile" element={<AdminProfile />} />
