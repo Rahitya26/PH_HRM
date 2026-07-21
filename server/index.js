@@ -503,13 +503,25 @@ app.get('/api/dashboard/stats', async (req, res) => {
 // --- Attendance ---
 app.get('/api/attendance', async (req, res) => {
   try {
-    const { branch_id, date, start_date, end_date } = req.query;
-    if (start_date && end_date) {
-      const result = await db.query('SELECT * FROM attendance WHERE branch_id = $1 AND date >= $2 AND date <= $3 ORDER BY date ASC', [branch_id, start_date, end_date]);
-      return res.json(result.rows);
+    const { branch_id, date, start_date, end_date, submitted_only } = req.query;
+    let baseQuery = 'SELECT * FROM attendance WHERE branch_id = $1';
+    let params = [branch_id];
+    let paramIndex = 2;
+    
+    if (submitted_only === 'true') {
+      baseQuery += ' AND is_submitted = TRUE';
     }
-    const result = await db.query('SELECT * FROM attendance WHERE branch_id = $1 AND date = $2', [branch_id, date]);
-    res.json(result.rows);
+    
+    if (start_date && end_date) {
+      baseQuery += ` AND date >= $${paramIndex} AND date <= $${paramIndex+1} ORDER BY date ASC`;
+      params.push(start_date, end_date);
+    } else {
+      baseQuery += ` AND date = $${paramIndex}`;
+      params.push(date);
+    }
+    
+    const result = await db.query(baseQuery, params);
+    return res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -522,14 +534,15 @@ app.post('/api/attendance', async (req, res) => {
     
     for (let r of records) {
       await db.query(`
-        INSERT INTO attendance (employee_id, branch_id, date, status, ot_hours, salary_advance, other_allowance)
-        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        INSERT INTO attendance (employee_id, branch_id, date, status, ot_hours, salary_advance, other_allowance, is_submitted)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         ON CONFLICT (employee_id, date) DO UPDATE SET 
           status = EXCLUDED.status, 
           ot_hours = EXCLUDED.ot_hours, 
           salary_advance = EXCLUDED.salary_advance,
-          other_allowance = EXCLUDED.other_allowance
-      `, [r.employee_id, branch_id, date, r.status, r.ot_hours || 0, r.salary_advance || 0, r.other_allowance || 0]);
+          other_allowance = EXCLUDED.other_allowance,
+          is_submitted = EXCLUDED.is_submitted
+      `, [r.employee_id, branch_id, date, r.status, r.ot_hours || 0, r.salary_advance || 0, r.other_allowance || 0, r.is_submitted || false]);
     }
     res.json({ message: 'Attendance saved successfully' });
   } catch (err) {
@@ -552,7 +565,7 @@ app.get('/api/payroll-data', async (req, res) => {
         COALESCE(SUM(salary_advance), 0)::int as total_advance,
         COALESCE(SUM(other_allowance), 0)::int as total_allowance
       FROM attendance
-      WHERE branch_id = $1 AND TO_CHAR(date, 'YYYY-MM') = $2
+      WHERE branch_id = $1 AND TO_CHAR(date, 'YYYY-MM') = $2 AND is_submitted = TRUE
       GROUP BY employee_id
     `, [branch_id, month]);
     res.json(result.rows);

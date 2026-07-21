@@ -1,7 +1,7 @@
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext, useMemo } from 'react';
 import axios from 'axios';
 import { AuthContext } from '../context/AuthContext';
-import { LogOut, Calendar, Building2, Save, Users, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
+import { LogOut, Calendar, Building2, Save, Users, ChevronDown, ChevronUp, Loader2, CheckCircle2 } from 'lucide-react';
 import { createPortal } from 'react-dom';
 
 export default function ManagerAttendance() {
@@ -22,6 +22,7 @@ export default function ManagerAttendance() {
   const [loanModal, setLoanModal] = useState({ open: false, emp: null, amount: '', deduction: '', startMonth: '' });
   const [expandedCards, setExpandedCards] = useState({});
   const [isSaving, setIsSaving] = useState(false);
+  const [submitModal, setSubmitModal] = useState(false);
 
   const toggleCard = (id) => {
     setExpandedCards(prev => ({ ...prev, [id]: !prev[id] }));
@@ -47,19 +48,22 @@ export default function ManagerAttendance() {
           const fetchedRecords = {};
           const submitted = new Set();
           res.data.forEach(r => {
-            submitted.add(r.employee_id);
+            if (r.is_submitted) {
+              submitted.add(r.employee_id);
+            }
             fetchedRecords[r.employee_id] = {
               status: r.status,
               ot_hours: r.ot_hours || '',
               salary_advance: r.salary_advance || '',
-              other_allowance: r.other_allowance || ''
+              other_allowance: r.other_allowance || '',
+              is_submitted: r.is_submitted || false
             };
           });
           
           // Pre-fill default state for employees not in db yet
           employees.forEach(emp => {
             if (!fetchedRecords[emp.id]) {
-              fetchedRecords[emp.id] = { status: 'Present', ot_hours: '', salary_advance: '', other_allowance: '' };
+              fetchedRecords[emp.id] = { status: 'Present', ot_hours: '', salary_advance: '', other_allowance: '', is_submitted: false };
             }
           });
 
@@ -104,39 +108,56 @@ export default function ManagerAttendance() {
     handleRecordChange(empId, 'other_allowance', num);
   };
 
-  const handleSave = async () => {
+  const handleSaveClick = () => {
+    setSubmitModal(true);
+  };
+
+  const handleConfirmSave = async (isSubmit) => {
     setIsSaving(true);
     try {
       const payload = {
         branch_id: user.branch_id,
         date: date,
-        records: Object.keys(records)
-          .filter(empId => !submittedEmployees.has(parseInt(empId)))
-          .map(empId => ({
-            employee_id: empId,
-            status: records[empId].status,
-            ot_hours: parseInt(records[empId].ot_hours) || 0,
-            salary_advance: parseInt(records[empId].salary_advance) || 0,
-            other_allowance: parseInt(records[empId].other_allowance) || 0
+        records: filteredEmployees
+          .filter(emp => !submittedEmployees.has(emp.id))
+          .filter(emp => JSON.stringify(records[emp.id]) !== JSON.stringify(initialRecords[emp.id]) || isSubmit)
+          .map(emp => ({
+            employee_id: emp.id,
+            status: records[emp.id].status,
+            ot_hours: parseInt(records[emp.id].ot_hours) || 0,
+            salary_advance: parseInt(records[emp.id].salary_advance) || 0,
+            other_allowance: parseInt(records[emp.id].other_allowance) || 0,
+            is_submitted: isSubmit
           }))
       };
       
       if (payload.records.length === 0) {
-        return alert('No new attendance records to save.');
+        setSubmitModal(false);
+        setIsSaving(false);
+        return alert('No new attendance records to process.');
       }
 
       await axios.post('/api/attendance', payload);
       
       const newSubmitted = new Set(submittedEmployees);
-      payload.records.forEach(r => newSubmitted.add(parseInt(r.employee_id)));
+      if (isSubmit) {
+        payload.records.forEach(r => newSubmitted.add(r.employee_id));
+      }
       
-      setInitialRecords(JSON.parse(JSON.stringify(records)));
-      setHasChanges(false);
+      const newInitial = { ...initialRecords };
+      payload.records.forEach(r => {
+        newInitial[r.employee_id] = { ...records[r.employee_id], is_submitted: isSubmit };
+      });
+      
+      setInitialRecords(newInitial);
+      setHasChanges(JSON.stringify(records) !== JSON.stringify(newInitial));
       setSubmittedEmployees(newSubmitted);
-      alert('Attendance saved successfully');
+      
+      alert(isSubmit ? 'Attendance submitted successfully!' : 'Attendance drafted successfully!');
+      setSubmitModal(false);
     } catch (err) {
       console.error(err);
-      alert('Failed to save attendance');
+      alert('Failed to process attendance');
     } finally {
       setIsSaving(false);
     }
@@ -182,6 +203,17 @@ export default function ManagerAttendance() {
     const isJoined = !e.joining_date || (new Date(e.joining_date).toISOString().split('T')[0] <= date);
     return isDeptMatch && isJoined;
   });
+
+  const submittedDepts = useMemo(() => {
+    const depts = new Set();
+    departments.forEach(d => {
+      const deptEmps = employees.filter(e => e.department_id === d.id && (!e.joining_date || new Date(e.joining_date).toISOString().split('T')[0] <= date));
+      if (deptEmps.length > 0 && deptEmps.every(e => submittedEmployees.has(e.id))) {
+        depts.add(d.id);
+      }
+    });
+    return depts;
+  }, [departments, employees, submittedEmployees, date]);
 
   // Sort alphabetically
   const sortedEmployees = [...filteredEmployees].sort((a, b) => a.name.localeCompare(b.name));
@@ -240,7 +272,9 @@ export default function ManagerAttendance() {
             >
               <option value="">All Departments</option>
               {departments.map(d => (
-                <option key={d.id} value={d.id}>{d.name}</option>
+                <option key={d.id} value={d.id} disabled={submittedDepts.has(d.id)} className={submittedDepts.has(d.id) ? 'text-slate-300' : 'text-slate-800'}>
+                  {d.name} {submittedDepts.has(d.id) ? '(Submitted)' : ''}
+                </option>
               ))}
             </select>
           </div>
@@ -484,12 +518,11 @@ export default function ManagerAttendance() {
                 {hasChanges ? 'Unsaved Attendance Changes' : 'Ready to Save Attendance'}
               </div>
               <button 
-                onClick={handleSave} 
-                disabled={isSaving}
+                onClick={handleSaveClick} 
+                disabled={isSaving || (filteredEmployees.every(emp => submittedEmployees.has(emp.id)))}
                 className="w-full sm:w-auto bg-indigo-500 hover:bg-indigo-400 text-white px-6 py-2.5 rounded-xl text-sm font-bold transition-all shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />} 
-                {isSaving ? 'Saving...' : 'Save Attendance'}
+                <Save size={16} /> Save / Submit
               </button>
             </div>
           </div>
@@ -552,6 +585,45 @@ export default function ManagerAttendance() {
                 <button type="submit" className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-colors shadow-lg shadow-indigo-500/30">Save Loan</button>
               </div>
             </form>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Submit/Draft Modal */}
+      {submitModal && createPortal(
+        <div className="fixed top-0 left-0 w-screen h-screen z-[100] flex items-center justify-center backdrop-blur-md bg-slate-900/40 p-4">
+          <div className="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl flex flex-col animate-in zoom-in-95 duration-200 border border-slate-100">
+            <h2 className="text-xl font-bold text-slate-800 mb-2">Save Attendance</h2>
+            <p className="text-sm font-medium text-slate-500 mb-6">
+              Do you want to save this as a draft or submit it permanently? 
+            </p>
+            
+            <div className="flex flex-col gap-3">
+              <button 
+                onClick={() => handleConfirmSave(false)} 
+                disabled={isSaving}
+                className="w-full bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold py-3 rounded-xl transition-colors flex justify-center items-center gap-2"
+              >
+                {isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                Save as Draft
+              </button>
+              <button 
+                onClick={() => handleConfirmSave(true)} 
+                disabled={isSaving}
+                className="w-full bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/30 text-white font-bold py-3 rounded-xl transition-colors shadow-lg flex justify-center items-center gap-2"
+              >
+                {isSaving ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
+                {selectedDept ? `Submit ${departments.find(d=>d.id == selectedDept)?.name || 'Department'}` : 'Submit All Departments'}
+              </button>
+              <button 
+                onClick={() => setSubmitModal(false)} 
+                disabled={isSaving}
+                className="mt-2 text-sm text-slate-400 hover:text-slate-600 font-bold"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>,
         document.body

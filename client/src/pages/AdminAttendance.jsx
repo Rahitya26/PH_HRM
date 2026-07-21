@@ -49,7 +49,7 @@ export default function AdminAttendance() {
   useEffect(() => {
     if (selectedBranch && date) {
       setIsLoading(true);
-      axios.get(`/api/attendance?branch_id=${selectedBranch}&date=${date}`)
+      axios.get(`/api/attendance?branch_id=${selectedBranch}&date=${date}&submitted_only=true`)
         .then(res => {
           const fetchedRecords = {};
           const submitted = new Set();
@@ -158,7 +158,7 @@ export default function AdminAttendance() {
     if (reportStartDate > today || reportEndDate > today) return alert("Dates cannot be in the future");
     
     try {
-      const res = await axios.get(`/api/attendance?branch_id=${selectedBranch}&start_date=${reportStartDate}&end_date=${reportEndDate}`);
+      const res = await axios.get(`/api/attendance?branch_id=${selectedBranch}&start_date=${reportStartDate}&end_date=${reportEndDate}&submitted_only=true`);
       const data = res.data;
       
       const dates = [];
